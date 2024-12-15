@@ -1,17 +1,7 @@
 /**
- * Copyright 2023 Google Inc. All rights reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @license
+ * Copyright 2023 Google Inc.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 import path from 'path';
@@ -52,21 +42,21 @@ function folder(platform: BrowserPlatform): string {
 export function resolveDownloadUrl(
   platform: BrowserPlatform,
   buildId: string,
-  baseUrl = 'https://storage.googleapis.com/chromium-browser-snapshots'
+  baseUrl = 'https://storage.googleapis.com/chromium-browser-snapshots',
 ): string {
   return `${baseUrl}/${resolveDownloadPath(platform, buildId).join('/')}`;
 }
 
 export function resolveDownloadPath(
   platform: BrowserPlatform,
-  buildId: string
+  buildId: string,
 ): string[] {
   return [folder(platform), buildId, `${archive(platform, buildId)}.zip`];
 }
 
 export function relativeExecutablePath(
   platform: BrowserPlatform,
-  _buildId: string
+  _buildId: string,
 ): string {
   switch (platform) {
     case BrowserPlatform.MAC:
@@ -76,7 +66,7 @@ export function relativeExecutablePath(
         'Chromium.app',
         'Contents',
         'MacOS',
-        'Chromium'
+        'Chromium',
       );
     case BrowserPlatform.LINUX:
       return path.join('chrome-linux', 'chrome');
@@ -86,13 +76,17 @@ export function relativeExecutablePath(
   }
 }
 export async function resolveBuildId(
-  platform: BrowserPlatform
+  platform: BrowserPlatform,
 ): Promise<string> {
   return await getText(
     new URL(
       `https://storage.googleapis.com/chromium-browser-snapshots/${folder(
-        platform
-      )}/LAST_CHANGE`
-    )
+        platform,
+      )}/LAST_CHANGE`,
+    ),
   );
+}
+
+export function compareVersions(a: string, b: string): number {
+  return Number(a) - Number(b);
 }

@@ -21,6 +21,7 @@ exports.scrapeAndDownload = async (req, res) => {
         browser = await puppeteer.launch({
             args: ['--no-sandbox', '--disable-setuid-sandbox'],
             headless: true, // Keep headless true in production
+            ignoreDefaultArgs: ['--disable-extensions'],
         });
 
         // Create a new page

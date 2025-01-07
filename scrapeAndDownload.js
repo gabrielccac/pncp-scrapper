@@ -2,7 +2,7 @@ const puppeteer = require('puppeteer');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
-    
+
 exports.scrapeAndDownload = async (req, res) => {
     let browser;
     try {
@@ -20,7 +20,7 @@ exports.scrapeAndDownload = async (req, res) => {
         // Launch the browser
         browser = await puppeteer.launch({
             args: ['--no-sandbox', '--disable-setuid-sandbox'],
-            headless: true, // Keep headless true in production
+            headless: true,
             ignoreDefaultArgs: ['--disable-extensions'],
         });
 
@@ -32,58 +32,6 @@ exports.scrapeAndDownload = async (req, res) => {
             waitUntil: 'networkidle0',
             timeout: 60000,
         });
-
-        // Click the "Arquivos" button
-        const arquivosButtonSelector = 'button[type="button"] span.name';
-        await page.waitForSelector(arquivosButtonSelector);
-        await page.evaluate((selector) => {
-            const button = [...document.querySelectorAll(selector)].find(el => el.textContent.includes('Arquivos'));
-            if (button) button.click();
-        }, arquivosButtonSelector);
-
-        // Wait for the download link to appear
-        const downloadLinkSelector = 'a[aria-label="Fazer download"]';
-        await page.waitForSelector(downloadLinkSelector);
-
-        // Extract the download link
-        const downloadLink = await page.evaluate((selector) => {
-            const linkElement = document.querySelector(selector);
-            return linkElement ? linkElement.href : null;
-        }, downloadLinkSelector);
-
-        if (!downloadLink) {
-            throw new Error('Download link not found');
-        }
-
-        // Download the file
-        const response = await axios({
-            url: downloadLink,
-            method: 'GET',
-            responseType: 'stream',
-        });
-
-        // Extract the file name from the Content-Disposition header
-        let originalFileName = 'downloaded_file.pdf'; // Default name in case header is missing
-        const contentDisposition = response.headers['content-disposition'];
-        if (contentDisposition) {
-            const fileNameMatch = contentDisposition.match(/filename="?(.+?)"?$/);
-            if (fileNameMatch) {
-                originalFileName = fileNameMatch[1];
-            }
-        }
-
-        // Define the file path with the original file name
-        const filePath = path.join(__dirname, originalFileName);
-        const writer = fs.createWriteStream(filePath);
-
-        response.data.pipe(writer);
-
-        await new Promise((resolve, reject) => {
-            writer.on('finish', resolve);
-            writer.on('error', reject);
-        });
-
-        console.log(`File downloaded successfully: ${originalFileName}`);
 
         // Extract the required information
         const extractedData = await page.evaluate(() => {
@@ -106,7 +54,12 @@ exports.scrapeAndDownload = async (req, res) => {
                 dataFimPropostas: getText('Data fim de recebimento de propostas'),
                 idContratacao: getText('Id contratação PNCP'),
                 fonte: getText('Fonte'),
-                unidadeCompradora: getText('Unidade compradora'),
+                unidadeCompradora: (() => {
+                    const element = [...document.querySelectorAll('p')]
+                        .find(p => p.querySelector('strong')?.textContent.includes('Unidade compradora'));
+                    const span = element?.querySelectorAll('span')[1]; // Select the second <span>
+                    return span ? span.textContent.trim() : null;
+                })(),
                 objeto: (() => {
                     const element = [...document.querySelectorAll('p')]
                         .find(p => p.querySelector('strong')?.textContent.includes('Objeto'))
@@ -124,13 +77,70 @@ exports.scrapeAndDownload = async (req, res) => {
 
         console.log('Data extracted successfully:', extractedData);
 
-        // Respond with the extracted data and the file
+        // Extract all download links
+        const downloadLinks = await page.evaluate(() => {
+            return [...document.querySelectorAll('a[aria-label="Fazer download"]')]
+                .map(link => link.href)
+                .filter(href => href)
+                .filter(link => {
+                    const url = new URL(link);
+                    return url.searchParams.get('ignorarExclusao') !== 'false';
+                });
+        });
+
+        if (downloadLinks.length === 0) {
+            throw new Error('No download links found');
+        }
+
+        console.log(`Found ${downloadLinks.length} files to download.`);
+
+        // Download all files
+        const downloadedFiles = [];
+        for (const [index, downloadLink] of downloadLinks.entries()) {
+            console.log(`Downloading file ${index + 1} from: ${downloadLink}`);
+
+            const response = await axios({
+                url: downloadLink,
+                method: 'GET',
+                responseType: 'stream',
+            });
+
+            // Extract the file name
+            let originalFileName = `downloaded_file_${index + 1}.pdf`; // Default name if no header
+            const contentDisposition = response.headers['content-disposition'];
+            if (contentDisposition) {
+                const fileNameMatch = contentDisposition.match(/filename="?(.+?)"?$/);
+                if (fileNameMatch) {
+                    originalFileName = fileNameMatch[1];
+                }
+            }
+
+            // Define the file path
+            const filePath = path.join(__dirname, originalFileName);
+            const writer = fs.createWriteStream(filePath);
+
+            response.data.pipe(writer);
+
+            await new Promise((resolve, reject) => {
+                writer.on('finish', resolve);
+                writer.on('error', reject);
+            });
+
+            console.log(`File downloaded successfully: ${originalFileName}`);
+            downloadedFiles.push({
+                name: originalFileName,
+                path: filePath,
+            });
+        }
+
+        // Respond with the extracted data and downloaded files
         res.json({
             data: extractedData,
-            file: {
-                name: originalFileName,
-                content: fs.readFileSync(filePath, { encoding: 'base64' }), // Convert file to Base64
-            },
+            message: `Successfully downloaded ${downloadedFiles.length} files.`,
+            files: downloadedFiles.map(file => ({
+                name: file.name,
+                content: fs.readFileSync(file.path, { encoding: 'base64' }), // Convert file to Base64
+            })),
         });
     } catch (error) {
         // Handle errors

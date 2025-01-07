@@ -3,7 +3,7 @@ const axios = require('axios');
 const testFunction = async () => {
   try {
     const response = await axios.post('http://localhost:3000/scrape-and-download', {
-      url: 'https://pncp.gov.br/app/editais/15233026000157/2024/141',
+      url: 'https://pncp.gov.br/app/editais/23086176000103/2024/51',
     });
 
     console.log('Response:', response.data);
